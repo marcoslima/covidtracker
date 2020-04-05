@@ -21,7 +21,20 @@ class MapData:
     def request_data(self):
         print('Requesting updated data from API')
         data_url = Settings.MAPDATA_URL
-        response = requests.get(data_url)
+        headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                   'accept-encoding': 'gzip, deflate, b',
+                   'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                   'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36'
+                }
+
+        try:
+            response = requests.get(data_url, headers=headers)
+            # print(f'Request result: {response.status_code}')
+            # print(f'Request response: {response.content}')
+        except Exception as e:
+            print(f'Erro fazendo request: {type(e)}: {e}')
+            print(f'Response: {response.content}')
+
         self.access_time = datetime.now()
         self.data = response.json()
 
@@ -57,7 +70,7 @@ class MapData:
 
     class Schema(marshmallow.Schema):
         access_time = fields.DateTime(format='iso')
-        data = fields.List(fields.Dict)
+        data = fields.Dict()
 
         @post_load
         def on_load(self, data, many, partial):
@@ -80,32 +93,33 @@ def main():
     map_data = MapData.load(Settings.CACHE_FILE)
     pop = {'IT': 60.0, 'BR': 209.0, 'ES': 46.0, 'GB': 83.0, 'FR': 67.0}
     plot_data = []
-    for x in map_data.data:
+    for x in map_data.data['data']:
+        # import ipdb; ipdb.set_trace()
         a_data = x['date'].rstrip('\r')
         dia = datetime.strptime(a_data, '%m/%d/%y')
         data_row = {'dia': dia}
-        for pais in [x for x in x['data'] if x['countrycode'] in
-                                             ['BR', 'GB', 'FR', 'ES', 'IT']]:
-            cc = pais['countrycode']
-            cases = pais['totalcases']
+        if x['countrycode'] in ['BR', 'GB', 'FR', 'ES', 'IT']:
+            cc = x['countrycode']
+            cases = x['deaths'] #cases']
             cases = float(cases) if cases else 0
             populacao = pop[cc]
             data_row = PlotData(dia,
                                 cc,
-                                pais['countrylabel'],
-                                cases/pop[pais['countrycode']])
+                                x['countrycode'],
+                                cases/populacao)
             plot_data.append(data_row)
+
 
     paises = set([x.sigla for x in plot_data])
     for pais in paises:
-        corte = [x for x in plot_data if x.sigla == pais and x.casos > 0]
+        corte = sorted([x for x in plot_data if x.sigla == pais and x.casos > 0], key=lambda x: x.dia)
         data_x = [(x.dia - corte[0].dia).days for x in corte if x.sigla == pais]
         data_y = [x.casos for x in corte if x.sigla == pais]
         plt.plot(data_x, data_y, label=corte[0].pais)
 
     plt.title('Coronavirus | Brasil vs. Europa \n Escala logarítmica (t inicial = 1º caso registrado)')
     plt.xlabel('Tempo em dias')
-    plt.ylabel('Casos / população')
+    plt.ylabel('Mortes / milhão habitantes')
     plt.yscale('log')
     plt.legend()
     plt.show()
