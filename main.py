@@ -5,6 +5,7 @@ from datetime import datetime
 
 from marshmallow import post_load, fields
 import marshmallow
+from enum import Enum
 
 
 class Settings:
@@ -88,8 +89,33 @@ class PlotData:
     def __repr__(self):
         return f'{self.dia}: {self.sigla} - {self.casos}'
 
+def _get_y_value(row, show_cases=True):
+    if show_cases:
+        return row['cases']
+    else:
+        return row['deaths']
+
 
 def main():
+    class DataToShow(Enum):
+        Deaths = 0
+        Cases = 1
+
+    cases_or_deaths = DataToShow.Deaths
+    relativo_populacao = True
+    log_scale = True
+
+    mc = input('Mortes ou Casos? (M/c)').upper()
+    if mc and mc == 'C':
+        cases_or_deaths = DataToShow.Cases
+    res = input('Relativo à população? (S/n)').upper()
+    if res and res == 'N':
+        relativo_populacao = False
+    res = input('Escala logarítmica? (S/n)').upper()
+    if res and res == 'N':
+        log_scale = False
+
+
     map_data = MapData.load(Settings.CACHE_FILE)
     pop = {'IT': 60.0, 'BR': 209.0, 'ES': 46.0, 'GB': 83.0, 'FR': 67.0}
     plot_data = []
@@ -100,13 +126,16 @@ def main():
         data_row = {'dia': dia}
         if x['countrycode'] in ['BR', 'GB', 'FR', 'ES', 'IT']:
             cc = x['countrycode']
-            cases = x['deaths'] #cases']
-            cases = float(cases) if cases else 0
             populacao = pop[cc]
+            cases = _get_y_value(x, show_cases=cases_or_deaths==DataToShow.Cases)
+            cases = float(cases) if cases else 0
+            if relativo_populacao:
+                cases /= populacao
+
             data_row = PlotData(dia,
                                 cc,
                                 x['countrycode'],
-                                cases/populacao)
+                                cases)
             plot_data.append(data_row)
 
 
@@ -117,10 +146,17 @@ def main():
         data_y = [x.casos for x in corte if x.sigla == pais]
         plt.plot(data_x, data_y, label=corte[0].pais)
 
-    plt.title('Coronavirus | Brasil vs. Europa \n Escala logarítmica (t inicial = 1º caso registrado)')
+    title_logaritmico = 'Escala logarítmica ' if log_scale else ''
+    plt.title(f'Coronavirus | Brasil vs. Europa \n {title_logaritmico}(t inicial = 1º caso registrado)')
     plt.xlabel('Tempo em dias')
-    plt.ylabel('Mortes / milhão habitantes')
-    plt.yscale('log')
+    y_label = 'Mortes' if cases_or_deaths == DataToShow.Deaths else 'Casos'
+    if relativo_populacao:
+        y_label += f' / milhão de habitantes'
+
+    plt.ylabel(y_label)
+    if log_scale:
+        plt.yscale('log')
+    plt.grid(which='both', axis='both')
     plt.legend()
     plt.show()
 
