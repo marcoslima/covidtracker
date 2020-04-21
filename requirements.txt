@@ -1,2 +1,5 @@
-requests==2.23
+requests==2.23.0
 marshmallow==3.5.1
+matplotlib~=3.2.1
+numpy~=1.18.3
+scipy~=1.4.1

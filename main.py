@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.signal import savgol_filter
 
 import requests
 from datetime import datetime
@@ -85,9 +87,9 @@ class PlotData:
         self.pais = pais
         self.casos = float(casos) if casos else 0
         
-
     def __repr__(self):
         return f'{self.dia}: {self.sigla} - {self.casos}'
+
 
 def _get_y_value(row, show_cases=True):
     if show_cases:
@@ -104,6 +106,7 @@ def main():
     cases_or_deaths = DataToShow.Deaths
     relativo_populacao = True
     log_scale = True
+    derivada = False
 
     mc = input('Mortes ou Casos? (M/c)').upper()
     if mc and mc == 'C':
@@ -114,17 +117,20 @@ def main():
     res = input('Escala logarítmica? (S/n)').upper()
     if res and res == 'N':
         log_scale = False
-
+    res = input('Derivada? (s/N)').upper()
+    if res and res == 'S':
+        derivada = True
 
     map_data = MapData.load(Settings.CACHE_FILE)
-    pop = {'IT': 60.0, 'BR': 209.0, 'ES': 46.0, 'GB': 83.0, 'FR': 67.0}
+    pop = {'IT': 60.0, 'BR': 209.0, 'ES': 46.0,
+           'GB': 83.0, 'FR': 67.0, 'KR': 51.4, 'US': 325.7}
     plot_data = []
     for x in map_data.data['data']:
         # import ipdb; ipdb.set_trace()
         a_data = x['date'].rstrip('\r')
         dia = datetime.strptime(a_data, '%m/%d/%y')
         data_row = {'dia': dia}
-        if x['countrycode'] in ['BR', 'GB', 'FR', 'ES', 'IT']:
+        if x['countrycode'] in ['BR', 'GB', 'FR', 'ES', 'IT', 'KR', 'US']:
             cc = x['countrycode']
             populacao = pop[cc]
             cases = _get_y_value(x, show_cases=cases_or_deaths==DataToShow.Cases)
@@ -138,20 +144,28 @@ def main():
                                 cases)
             plot_data.append(data_row)
 
-
     paises = set([x.sigla for x in plot_data])
     for pais in paises:
         corte = sorted([x for x in plot_data if x.sigla == pais and x.casos > 0], key=lambda x: x.dia)
         data_x = [(x.dia - corte[0].dia).days for x in corte if x.sigla == pais]
         data_y = [x.casos for x in corte if x.sigla == pais]
-        plt.plot(data_x, data_y, label=corte[0].pais)
+        dydx = np.diff(data_y)/np.diff(data_x)
+        suave = savgol_filter(dydx, 25, 3)
+
+        plot_y = suave if derivada else data_y
+        plot_x = data_x[:-1] if derivada else data_x
+
+        plt.plot(plot_x, plot_y, label=corte[0].pais)
 
     title_logaritmico = 'Escala logarítmica ' if log_scale else ''
-    plt.title(f'Coronavirus | Brasil vs. Europa \n {title_logaritmico}(t inicial = 1º caso registrado)')
+    plt.title(f'Coronavirus | Brasil vs. Europa \n '
+              f'{title_logaritmico}(t inicial = 1º caso registrado)')
     plt.xlabel('Tempo em dias')
     y_label = 'Mortes' if cases_or_deaths == DataToShow.Deaths else 'Casos'
     if relativo_populacao:
         y_label += f' / milhão de habitantes'
+    if derivada:
+        y_label += ' (derivada)'
 
     plt.ylabel(y_label)
     if log_scale:
@@ -159,6 +173,7 @@ def main():
     plt.grid(which='both', axis='both')
     plt.legend()
     plt.show()
+
 
 if __name__ == '__main__':
     main()
